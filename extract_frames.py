@@ -1,64 +1,106 @@
-import cv2
 import argparse
 import os
 import glob
 from datetime import datetime
 from zipfile import ZipFile
-from ftplib import FTP
+from ftplib import FTP, error_perm
 from contextlib import closing
 from os.path import basename
+import urllib.request
+import time
+from persistqueue import Queue
+from threading import Thread
+import traceback
+import logging
 
-def extractImages(pathIn, pathOut, fps):
-    count = 0
-    vidcap = cv2.VideoCapture(pathIn)
-    success,image = vidcap.read()
-    success = True
-    while success:
-      vidcap.set(cv2.CAP_PROP_POS_MSEC,(count*(1000/fps)))    # added this line 
-      success,image = vidcap.read()
-#      print ('Read a new frame: ', success)
-      nombre=basename(pathIn)[:-4]
-      cv2.imwrite( pathOut + f"/{nombre}-"+str(int(fps))+"-" + str(count).zfill(8)+".jpg", image)     # save frame as JPEG file
-      count = count + 1
-
-if __name__ == "__main__":
-    datos_ftp = {"host":"rampillas.synology.me", "user":"rampillas", 'passwd':"roma2014" }
-    hoy = datetime.now()
-    dia, mes, año = map(lambda x: getattr(hoy,x), ("day", "month", "year"))
-    ruta_actual=os.getcwd()
-    # sacar rutas
-    rutas=glob.glob(ruta_actual+r'\*.mov')
-    # procesar
-    directorio_imagenes = ruta_actual + f"\\{año}-{mes}-{dia}"
-    if not os.path.isdir(directorio_imagenes):
-        os.mkdir(directorio_imagenes)
-    
-    for ruta in rutas:
-        extractImages(ruta, directorio_imagenes, 0.5)
-    ruta_zip = directorio_imagenes + ".zip"
-    with ZipFile(ruta_zip, "w") as archivo_zip:
-        archivo_zip.write(directorio_imagenes)
-    with closing(FTP(**datos_ftp)) as sesion, open(ruta_zip,
-                "rb") as archivo:
-        sesion.storbinary("STOR {}".format(basename(ruta_zip)), archivo)
-        sesion.quit()
+def descarga_camaras(cola,salva_cada):
+    def crea_foto(ruta_archivo,camara):
+        with open(ruta_archivo,'wb') as foto:
+            foto.write(urllib.request.urlopen('http://192.168.0.{}/snap.jpg?JpegSize=M&JpegCam={}'.format(camara[0],camara[1])).read())
         
-    
-    
-    
-            
-    # comprimir
-#    # enviar ftp 
-#    ruta
-#    lista_videos
-#    extractImages(r"D:\Users\Andres\Escritorio\20180417_0630_0930\0 - 2018-04-17 06-30-00-709.mov",
-#                  r"D:\Users\Andres\Escritorio\20180417_0630_0930\out", 
-#                  0.5)
-#    parser = argparse.ArgumentParser(description='Extract frames from a video')
-#    parser.add_argument('--video', type=str, required=True, help='Video path')
-#    parser.add_argument('--dest', type=str, required=True, help='Destination folder')
-#    parser.add_argument('--fps', type=float, required=True, help='Frame rate')
-#    args = parser.parse_args()
-   
-#    extractImages(args.video, args.dest, args.fps)
+    print(datetime.now())
+    ip_camaras=((122,14),(122,4),(122,6),(122,9),(122,10),(121,4),(121,10),(120,1),(120,8),(120,10),(120,2))
+    while True:
+        inicio=datetime.now()
+        inicio_str=datetime.strftime(inicio,'%H_%M_%S_%f')
+        directorio=datetime.strftime(inicio,r'%Y_%m_%d')
+        desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop') 
+        for camara in ip_camaras: 
+            ruta_archivo=r'camaras/{}/{}_ip_{}_cam_{}.jpg'.format(directorio,inicio_str,camara[0],camara[1])
+            try:
+                crea_foto(ruta_archivo,camara)         
+            except FileNotFoundError:
+                os.mkdir(r'camaras/{}'.format(directorio))
+                logging.warning('El directorio {} ha sido creado'.format(desktop,directorio))
+                try:     
+                    crea_foto(ruta_archivo,camara)
+                except:
+                    raise
+                else:
+                    try:
+                        cola.put((ruta_archivo,directorio))
+                    except Exception as e:
+                        logging.exception('Error al manipular la cola con archivo {}'.format(ruta))
+            except Exception as e:
+                logging.exception('Error al crear el archivo {}'.format(ruta_archivo))
+                pass
+            else:
+                
+                cola.put((ruta_archivo,directorio))
+        fin=datetime.now()
+        time.sleep(salva_cada-((fin-inicio).seconds+(fin-inicio).microseconds)/1000000)
 
+def sube_ftp(cola,cola_borrar):  
+    datos_ftp = {"host":"193.144.208.142", "user":"ftpserver", 'passwd':"kjgbhr867kk,m-+`" }
+    while True:
+        try:
+            with closing(FTP(**datos_ftp)) as sesion:
+                sesion.cwd('camaras')
+                while True:
+                    ruta, directorio=cola.get()
+                    with open(ruta, "rb") as archivo:
+                        try:
+                            sesion.storbinary("STOR {}".format(ruta[8:]), archivo)
+                        except error_perm:
+                            logging.warning('INTENTANDO CREAR directorio  remoto {}'.format(directorio))
+                            sesion.mkd(directorio)
+                            logging.warning('El directorio  remoto {} ha sido creado'.format(directorio))
+                        except Exception as e:
+                            logging.exception('Error al subir el archivo {} msg'.format(ruta[8:]))
+                            cola.put((ruta,directorio))
+                            sesion.quit()
+                            break
+                        else:
+                            cola_borrar.put(ruta)
+
+                                
+        except Exception as e:
+            time.sleep(5)
+            logging.exception('Error FTP ')
+            pass
+
+        
+def borra_viejos(cola_borrar):
+    while True:
+        ruta=cola_borrar.get()
+        try:
+            os.remove(ruta)
+            print('borrado')
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print('error {}'.format(str(e)))
+            cola_borrar.put(ruta)
+            logging.exception('Error borrando {}'.format(ruta))
+            time.sleep(5)
+                
+
+     
+if __name__ == "__main__":
+    salva_cada=3600
+    logging.basicConfig(filename='sube_videos.log',level=logging.WARNING)
+    cola = Queue('sube')
+    cola_borrar = Queue('borra')
+    Thread(target=descarga_camaras, args=(cola,salva_cada)).start()
+    Thread(target=sube_ftp, args=(cola,cola_borrar)).start()
+    Thread(target=borra_viejos, args=(cola_borrar,)).start()
