@@ -16,8 +16,8 @@ import pysftp
 
 
 def descarga_camaras(cola,salva_cada):
-    def crea_foto(ruta_archivo,camara):
-        with open(ruta_archivo,'wb') as foto:
+    def crea_foto(ruto_archivo,camara):
+        with open(ruto_archivo,'wb') as  foto:
             foto.write(urllib.request.urlopen('http://192.168.0.{}/snap.jpg?JpegSize=M&JpegCam={}'.format(camara[0],camara[1])).read())
         
     print(datetime.now())
