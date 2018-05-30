@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<NetworkLinkControl>
+ <Update>
+ <targetHref>https://archivosgist.es/espiras/posicion_camaras.kml</targetHref>
+ <Change>
+ <Placemark id="pm123">
+			<name>3111</name>
+			<open>1</open>
+			<description><![CDATA[<img src="https://archivosgist.es/espiras/kml_camaras/122_5.jpg">]]></description>
+			<LookAt>
+				<longitude>-3.828935313297031</longitude>
+				<latitude>43.45340383563278</latitude>
+				<altitude>0</altitude>
+				<heading>0.2955069918310631</heading>
+				<tilt>30.0066500697747</tilt>
+				<range>1480.600754603664</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_cam1</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-3.828935313297031,43.45340383563279,0</coordinates>
+			</Point>
+		</Placemark>
+ </Change> </Update>
+</NetworkLinkControl>
+</kml>
+
+
+
