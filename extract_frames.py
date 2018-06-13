@@ -13,6 +13,8 @@ from threading import Thread
 import traceback
 import logging
 import pysftp
+from threading import Lock
+from os.path import basename
 
 def upload_file(directorio,file):
     options=pysftp.CnOpts()
@@ -32,38 +34,53 @@ def descarga_camaras(cola,salva_cada):
             foto.write(urllib.request.urlopen('http://192.168.0.{}/snap.jpg?JpegSize=M&JpegCam={}'.format(camara[0],camara[1])).read())
         
     print(datetime.now())
-##    ip_camaras=((122,14),(122,4),(122,6),(122,9),(122,10),(121,4),(121,10),(120,1),(120,8),(120,10),(120,2))
-    ip_camaras=((122,14),(122,4))
+    ip_camaras=((122,14),(122,4),(122,6),(122,9),(122,10),(121,4),(121,10),(120,1),(120,8),(120,10),(120,2))
+##    ip_camaras=((122,14),(122,4))
     while True:
         inicio=datetime.now()
         inicio_str=datetime.strftime(inicio,'%H_%M_%S_%f')
         directorio=datetime.strftime(inicio,r'%Y_%m_%d')
-        desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop') 
+        lista_para_zipear=list()
         for camara in ip_camaras: 
             ruta_archivo=r'camaras/{}/{}_ip_{}_cam_{}.jpg'.format(directorio,inicio_str,camara[0],camara[1])
             try:
                 crea_foto(ruta_archivo,camara)         
             except FileNotFoundError:
                 os.mkdir(r'camaras/{}'.format(directorio))
-                logging.warning('El directorio {} ha sido creado'.format(desktop,directorio))
-                try:     
+                logging.warning('El directorio {} ha sido creado'.format(directorio))
+                try:      
                     crea_foto(ruta_archivo,camara)
                 except:
                     raise
                 else:
                     try:
-                        cola.put((ruta_archivo,directorio))
+                        lista_para_zipear.append(ruta_archivo)
                     except Exception as e:
-                        logging.exception('Error al manipular la cola con archivo {}'.format(ruta))
+                        logging.exception('Error al añadir archivo a lista con archivo {}'.format(ruta))
             except Exception as e:
                 logging.exception('Error al crear el archivo {}'.format(ruta_archivo))
                 pass
             else:
                 try:
-                    cola.put((ruta_archivo,directorio))
+                    lista_para_zipear.append(ruta_archivo)
                 except:
-                    logging.exception('Error al poner en cola el archivo {}'.format(ruta_archivo))
-                    time.sleep(2)
+                    logging.exception('Error al añadir archivo a lista con archivo {}'.format(ruta_archivo))
+                    time.sleep(1)
+        try:
+            ruta_zip=r'camaras/{}/{}.zip'.format(directorio,inicio_str)
+            with ZipFile(ruta_zip,'w') as file:
+                for archivo in lista_para_zipear:
+                    file.write(archivo,basename(archivo))
+                    os.remove(archivo)
+        except Exception as e:
+            logging.exception('Error crear el zip {}'.format(directorio))
+        else:
+            try:
+                cola.put((ruta_zip,directorio))
+            except:
+                    logging.exception('Error al añadir archivo a lista con archivo {}'.format(ruta_archivo))
+                    time.sleep(1)
+                    
         fin=datetime.now()
         time.sleep(salva_cada-((fin-inicio).seconds+(fin-inicio).microseconds)/1000000)
 
